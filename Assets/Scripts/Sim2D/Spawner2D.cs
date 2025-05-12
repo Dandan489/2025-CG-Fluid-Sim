@@ -21,6 +21,7 @@ public class Spawner2D : MonoBehaviour
 		List<float2> allPoints = new();
 		List<float2> allVelocities = new();
 		List<int> allIndices = new();
+		List<float> allMass = new();
 
 		for (int regionIndex = 0; regionIndex < spawnRegions.Length; regionIndex++)
 		{
@@ -35,6 +36,7 @@ public class Spawner2D : MonoBehaviour
 				allPoints.Add(points[i] + jitter);
 				allVelocities.Add(initialVelocity);
 				allIndices.Add(regionIndex);
+				allMass.Add(region.mass);
 			}
 		}
 
@@ -43,6 +45,7 @@ public class Spawner2D : MonoBehaviour
 			positions = allPoints.ToArray(),
 			velocities = allVelocities.ToArray(),
 			spawnIndices = allIndices.ToArray(),
+			mass = allMass.ToArray(),
 		};
 
 		return data;
@@ -92,12 +95,14 @@ public class Spawner2D : MonoBehaviour
 		public float2[] positions;
 		public float2[] velocities;
 		public int[] spawnIndices;
+		public float[] mass;
 
 		public ParticleSpawnData(int num)
 		{
 			positions = new float2[num];
 			velocities = new float2[num];
 			spawnIndices = new int[num];
+			mass = new float[num];
 		}
 	}
 
@@ -106,6 +111,7 @@ public class Spawner2D : MonoBehaviour
 	{
 		public Vector2 position;
 		public Vector2 size;
+		public float mass;
 		public Color debugCol;
 	}
 

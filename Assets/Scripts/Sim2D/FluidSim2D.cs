@@ -39,10 +39,12 @@ namespace Seb.Fluid2D.Simulation
 		public ComputeBuffer positionBuffer { get; private set; }
 		public ComputeBuffer velocityBuffer { get; private set; }
 		public ComputeBuffer densityBuffer { get; private set; }
+		public ComputeBuffer massBuffer { get; private set; }
 
 		ComputeBuffer sortTarget_Position;
 		ComputeBuffer sortTarget_PredicitedPosition;
 		ComputeBuffer sortTarget_Velocity;
+		ComputeBuffer sortTarget_Mass;
 
 		ComputeBuffer predictedPositionBuffer;
 		SpatialHash spatialHash;
@@ -86,10 +88,12 @@ namespace Seb.Fluid2D.Simulation
 			predictedPositionBuffer = ComputeHelper.CreateStructuredBuffer<float2>(numParticles);
 			velocityBuffer = ComputeHelper.CreateStructuredBuffer<float2>(numParticles);
 			densityBuffer = ComputeHelper.CreateStructuredBuffer<float2>(numParticles);
+			massBuffer = ComputeHelper.CreateStructuredBuffer<float>(numParticles);
 
 			sortTarget_Position = ComputeHelper.CreateStructuredBuffer<float2>(numParticles);
 			sortTarget_PredicitedPosition = ComputeHelper.CreateStructuredBuffer<float2>(numParticles);
 			sortTarget_Velocity = ComputeHelper.CreateStructuredBuffer<float2>(numParticles);
+			sortTarget_Mass = ComputeHelper.CreateStructuredBuffer<float>(numParticles);
 
 			// Set buffer data
 			SetInitialBufferData(spawnData);
@@ -99,6 +103,7 @@ namespace Seb.Fluid2D.Simulation
 			ComputeHelper.SetBuffer(compute, predictedPositionBuffer, "PredictedPositions", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, reorderKernel, copybackKernel);
 			ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", externalForcesKernel, pressureKernel, viscosityKernel, updatePositionKernel, reorderKernel, copybackKernel);
 			ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", densityKernel, pressureKernel, viscosityKernel);
+			ComputeHelper.SetBuffer(compute, massBuffer, "Mass", externalForcesKernel, pressureKernel, densityKernel, reorderKernel, copybackKernel);
 
 			ComputeHelper.SetBuffer(compute, spatialHash.SpatialIndices, "SortedIndices", spatialHashKernel, reorderKernel);
 			ComputeHelper.SetBuffer(compute, spatialHash.SpatialOffsets, "SpatialOffsets", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
@@ -107,10 +112,24 @@ namespace Seb.Fluid2D.Simulation
 			ComputeHelper.SetBuffer(compute, sortTarget_Position, "SortTarget_Positions", reorderKernel, copybackKernel);
 			ComputeHelper.SetBuffer(compute, sortTarget_PredicitedPosition, "SortTarget_PredictedPositions", reorderKernel, copybackKernel);
 			ComputeHelper.SetBuffer(compute, sortTarget_Velocity, "SortTarget_Velocities", reorderKernel, copybackKernel);
+			ComputeHelper.SetBuffer(compute, sortTarget_Mass, "SortTarget_Mass", reorderKernel, copybackKernel);
 
 			compute.SetInt("numParticles", numParticles);
 		}
 
+		void DebugPrintParticleData()
+		{
+			float2[] positions = new float2[positionBuffer.count];
+			float[] masses = new float[massBuffer.count];
+
+			positionBuffer.GetData(positions);
+			massBuffer.GetData(masses);
+
+			for (int i = 0; i < positions.Length; i++)
+			{
+				Debug.Log($"Particle {i}: Position = {positions[i]}, Mass = {masses[i]}");
+			}
+		}
 
 		void Update()
 		{
@@ -207,6 +226,7 @@ namespace Seb.Fluid2D.Simulation
 			positionBuffer.SetData(allPoints);
 			predictedPositionBuffer.SetData(allPoints);
 			velocityBuffer.SetData(spawnData.velocities);
+			massBuffer.SetData(spawnData.mass);
 		}
 
 		void HandleInput()
@@ -230,12 +250,17 @@ namespace Seb.Fluid2D.Simulation
 				RunSimulationStep();
 				SetInitialBufferData(spawnData);
 			}
+
+			if (Input.GetKeyDown(KeyCode.P))
+			{
+				DebugPrintParticleData();
+			}
 		}
 
 
 		void OnDestroy()
 		{
-			ComputeHelper.Release(positionBuffer, predictedPositionBuffer, velocityBuffer, densityBuffer, sortTarget_Position, sortTarget_Velocity, sortTarget_PredicitedPosition);
+			ComputeHelper.Release(positionBuffer, predictedPositionBuffer, velocityBuffer, densityBuffer, massBuffer, sortTarget_Position, sortTarget_Velocity, sortTarget_PredicitedPosition, sortTarget_Mass);
 			spatialHash.Release();
 		}
 

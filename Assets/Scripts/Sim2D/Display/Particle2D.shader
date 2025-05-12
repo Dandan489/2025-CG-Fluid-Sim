@@ -21,6 +21,7 @@ Shader "Instanced/Particle2D" {
 			StructuredBuffer<float2> Positions2D;
 			StructuredBuffer<float2> Velocities;
 			StructuredBuffer<float2> DensityData;
+			StructuredBuffer<float> Mass;
 			float scale;
 			float4 colA;
 			Texture2D<float4> ColourMap;
@@ -36,9 +37,12 @@ Shader "Instanced/Particle2D" {
 
 			v2f vert (appdata_full v, uint instanceID : SV_InstanceID)
 			{
-				float speed = length(Velocities[instanceID]);
-				float speedT = saturate(speed / velocityMax);
-				float colT = speedT;
+				// float speed = length(Velocities[instanceID]);
+				// float speedT = saturate(speed / velocityMax);
+				// float colT = speedT;
+				float mass = Mass[instanceID];
+				float massT = saturate(mass / 5);
+				float colT = massT;
 				
 				float3 centreWorld = float3(Positions2D[instanceID], 0);
 				float3 worldVertPos = centreWorld + mul(unity_ObjectToWorld, v.vertex * scale);
@@ -48,6 +52,7 @@ Shader "Instanced/Particle2D" {
 				o.uv = v.texcoord;
 				o.pos = UnityObjectToClipPos(objectVertPos);
 				o.colour = ColourMap.SampleLevel(linear_clamp_sampler, float2(colT, 0.5), 0);
+				// o.colour  = float4(colT, colT, colT, 1);
 
 				return o;
 			}

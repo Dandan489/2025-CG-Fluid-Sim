@@ -18,6 +18,7 @@ RWStructuredBuffer<float2> Positions;
 RWStructuredBuffer<float2> PredictedPositions;
 RWStructuredBuffer<float2> Velocities;
 RWStructuredBuffer<float2> Densities; // Density, Near Density
+RWStructuredBuffer<float> Mass;
 
 // Spatial hashing
 RWStructuredBuffer<uint> SpatialKeys;
@@ -67,7 +68,7 @@ float ViscosityKernel(float dst, float radius)
 	return SmoothingKernelPoly6(dst, smoothingRadius);
 }
 
-float2 CalculateDensity(float2 pos)
+float2 CalculateDensity(float2 pos, float mass)
 {
 	int2 originCell = GetCell2D(pos, smoothingRadius);
 	float sqrRadius = smoothingRadius * smoothingRadius;
@@ -99,8 +100,8 @@ float2 CalculateDensity(float2 pos)
 
 			// Calculate density and near density
 			float dst = sqrt(sqrDstToNeighbour);
-			density += DensityKernel(dst, smoothingRadius);
-			nearDensity += NearDensityKernel(dst, smoothingRadius);
+			density += DensityKernel(dst, smoothingRadius) * mass;
+			nearDensity += NearDensityKernel(dst, smoothingRadius) * mass;
 		}
 	}
 
@@ -213,6 +214,7 @@ void UpdateSpatialHash (uint3 id : SV_DispatchThreadID)
 RWStructuredBuffer<float2> SortTarget_Positions;
 RWStructuredBuffer<float2> SortTarget_PredictedPositions;
 RWStructuredBuffer<float2> SortTarget_Velocities;
+RWStructuredBuffer<float> SortTarget_Mass;
 
 [numthreads(NumThreads,1,1)]
 void Reorder (uint3 id : SV_DispatchThreadID)
@@ -223,6 +225,7 @@ void Reorder (uint3 id : SV_DispatchThreadID)
 	SortTarget_Positions[id.x] = Positions[sortedIndex];
 	SortTarget_PredictedPositions[id.x] = PredictedPositions[sortedIndex];
 	SortTarget_Velocities[id.x] = Velocities[sortedIndex];
+	SortTarget_Mass[id.x] = Mass[sortedIndex];
 }
 
 
@@ -234,6 +237,7 @@ void ReorderCopyback (uint3 id : SV_DispatchThreadID)
 	Positions[id.x] = SortTarget_Positions[id.x];
 	PredictedPositions[id.x] = SortTarget_PredictedPositions[id.x];
 	Velocities[id.x] = SortTarget_Velocities[id.x];
+	Mass[id.x] = SortTarget_Mass[id.x];
 }
 
 
@@ -243,7 +247,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	if (id.x >= numParticles) return;
 
 	float2 pos = PredictedPositions[id.x];
-	Densities[id.x] = CalculateDensity(pos);
+	Densities[id.x] = CalculateDensity(pos, Mass[id.x]);
 }
 
 [numthreads(NumThreads,1,1)]
@@ -299,8 +303,8 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 			float sharedPressure = (pressure + neighbourPressure) * 0.5;
 			float sharedNearPressure = (nearPressure + neighbourNearPressure) * 0.5;
 
-			pressureForce += dirToNeighbour * DensityDerivative(dst, smoothingRadius) * sharedPressure / neighbourDensity;
-			pressureForce += dirToNeighbour * NearDensityDerivative(dst, smoothingRadius) * sharedNearPressure / neighbourNearDensity;
+			pressureForce += dirToNeighbour * DensityDerivative(dst, smoothingRadius) * Mass[id.x] * sharedPressure / neighbourDensity;
+			pressureForce += dirToNeighbour * NearDensityDerivative(dst, smoothingRadius) * Mass[id.x] * sharedNearPressure / neighbourNearDensity;
 		}
 	}
 
