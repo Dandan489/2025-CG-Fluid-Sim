@@ -18,7 +18,12 @@ RWStructuredBuffer<float2> Positions;
 RWStructuredBuffer<float2> PredictedPositions;
 RWStructuredBuffer<float2> Velocities;
 RWStructuredBuffer<float2> Densities; // Density, Near Density
+
+// New Buffers
 RWStructuredBuffer<float> Mass;
+RWStructuredBuffer<float2> Acceleration;
+RWStructuredBuffer<float2> DriftVelocity;
+RWStructuredBuffer<float2> VolumeFraction;
 
 // Spatial hashing
 RWStructuredBuffer<uint> SpatialKeys;
@@ -214,7 +219,11 @@ void UpdateSpatialHash (uint3 id : SV_DispatchThreadID)
 RWStructuredBuffer<float2> SortTarget_Positions;
 RWStructuredBuffer<float2> SortTarget_PredictedPositions;
 RWStructuredBuffer<float2> SortTarget_Velocities;
+
+//New SortTarget Buffers
 RWStructuredBuffer<float> SortTarget_Mass;
+RWStructuredBuffer<float2> sortTarget_Acceleration;
+RWStructuredBuffer<float2> sortTarget_VolumnFraction;
 
 [numthreads(NumThreads,1,1)]
 void Reorder (uint3 id : SV_DispatchThreadID)
@@ -226,6 +235,8 @@ void Reorder (uint3 id : SV_DispatchThreadID)
 	SortTarget_PredictedPositions[id.x] = PredictedPositions[sortedIndex];
 	SortTarget_Velocities[id.x] = Velocities[sortedIndex];
 	SortTarget_Mass[id.x] = Mass[sortedIndex];
+	sortTarget_Acceleration[id.x] = Acceleration[sortedIndex];
+	sortTarget_VolumnFraction[id.x] = VolumeFraction[sortedIndex];
 }
 
 
@@ -238,6 +249,8 @@ void ReorderCopyback (uint3 id : SV_DispatchThreadID)
 	PredictedPositions[id.x] = SortTarget_PredictedPositions[id.x];
 	Velocities[id.x] = SortTarget_Velocities[id.x];
 	Mass[id.x] = SortTarget_Mass[id.x];
+	Acceleration[id.x] = sortTarget_Acceleration[id.x];
+	VolumeFraction[id.x] = sortTarget_VolumnFraction[id.x];
 }
 
 
