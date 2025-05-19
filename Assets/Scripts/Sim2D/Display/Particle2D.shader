@@ -41,7 +41,7 @@ Shader "Instanced/Particle2D" {
 				// float speedT = saturate(speed / velocityMax);
 				// float colT = speedT;
 				float mass = Mass[instanceID];
-				float massT = saturate(mass / 5);
+				float massT = saturate(mass-4);
 				float colT = massT;
 				
 				float3 centreWorld = float3(Positions2D[instanceID], 0);
