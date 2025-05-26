@@ -171,10 +171,10 @@ MonoBehaviour:
   phaseDensity: {x: 600, y: 720}
   phaseMass: {x: 4, y: 5}
   tau: 0.000001
-  sigma: 10
-  viscosityStrength: {x: 1, y: 1}
+  sigma: 0
+  viscosityStrength: {x: 0.01, y: 0.01}
   mass: 4
-  miscible: 1
+  miscible: 0
   timeScale: 1
   maxTimestepFPS: 60
   iterationsPerFrame: 3

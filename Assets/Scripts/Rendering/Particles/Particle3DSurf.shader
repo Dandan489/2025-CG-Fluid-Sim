@@ -32,6 +32,7 @@ Shader "Fluid/Particle3DSurf"
         #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 			StructuredBuffer<float3> Positions;
 			StructuredBuffer<float3> Velocities;
+            StructuredBuffer<float> Mass;
         #endif
 
 
@@ -48,9 +49,12 @@ Shader "Fluid/Particle3DSurf"
             o.uv_MainTex = v.texcoord.xy;
 
             #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-				float speed = length(Velocities[unity_InstanceID]);
-				float speedT = saturate(speed / velocityMax);
-				float colT = speedT;
+				// float speed = length(Velocities[unity_InstanceID]);
+				// float speedT = saturate(speed / velocityMax);
+				// float colT = speedT;
+                float mass = Mass[unity_InstanceID];
+                float massT = saturate(mass - 4);
+                float colT = massT;
 				o.colour = tex2Dlod(ColourMap, float4(colT, 0.5,0,0));
             #endif
         }

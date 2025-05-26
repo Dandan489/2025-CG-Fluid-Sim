@@ -589,7 +589,7 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 	float2 velocity = Velocities[id.x];
 
 	float density_m = dot(VolumeFraction[id.x], phaseDensity);
-	float2 viscosity_i = dot(VolumeFraction[id.x], viscosityStrength);
+	float viscosity_i = dot(VolumeFraction[id.x], viscosityStrength);
 	
 	for (int i = 0; i < 9; i ++)
 	{

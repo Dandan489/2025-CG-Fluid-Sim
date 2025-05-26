@@ -65,6 +65,7 @@ namespace Seb.Fluid.Rendering
 					mat.SetBuffer("Positions", sim.positionBuffer);
 					mat.SetBuffer("Velocities", sim.velocityBuffer);
 					mat.SetBuffer("DebugBuffer", sim.debugBuffer);
+					mat.SetBuffer("Mass", sim.massBuffer);
 				}
 			}
 

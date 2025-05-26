@@ -232,20 +232,18 @@ namespace Seb.Fluid2D.Simulation
 
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: densityKernel);
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: driftVelocityKernel);
-			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: volumeFractionCalculateKernel);
-			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: volumeFractionUpdateKernel);
+			if (miscible)
+			{
+				ComputeHelper.Dispatch(compute, numParticles, kernelIndex: volumeFractionCalculateKernel);
+				ComputeHelper.Dispatch(compute, numParticles, kernelIndex: volumeFractionUpdateKernel);
+			}
 
 			// ComputeHelper.Dispatch(compute, numParticles, kernelIndex: densityKernel);
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: pressureKernel);
-			// DebugPrintParticleData("after pressure");
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: viscosityKernel);
-			// DebugPrintParticleData("after viscosity");
-			// ComputeHelper.Dispatch(compute, numParticles, kernelIndex: calculateCMTKernel);
-			// DebugPrintParticleData("after CMT");
-
+			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: calculateCMTKernel);
 
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: updatePositionKernel);
-			// DebugPrintParticleData("after update");
 		}
 
 		void RunSpatial()

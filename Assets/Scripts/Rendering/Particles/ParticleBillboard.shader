@@ -19,6 +19,7 @@ Shader "Fluid/ParticleBillboard" {
 			StructuredBuffer<float3> Positions;
 			StructuredBuffer<float3> Velocities;
 			Texture2D<float4> ColourMap;
+			StructuredBuffer<float> Mass;
 			SamplerState linear_clamp_sampler;
 			float velocityMax;
 
@@ -47,9 +48,13 @@ Shader "Fluid/ParticleBillboard" {
 				o.pos = mul(UNITY_MATRIX_P, viewPos);
 
 
-				float speed = length(Velocities[instanceID]);
+				/*float speed = length(Velocities[instanceID]);
 				float speedT = saturate(speed / velocityMax);
-				float colT = speedT;
+				float colT = speedT;*/
+
+				float mass = Mass[instanceID];
+				float massT = saturate(mass - 4);
+				float colT = massT;
 				o.colour = ColourMap.SampleLevel(linear_clamp_sampler, float2(colT, 0.5), 0);
 
 				return o;

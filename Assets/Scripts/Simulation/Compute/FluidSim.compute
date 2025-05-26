@@ -8,7 +8,11 @@
 #pragma kernel UpdatePositions
 #pragma kernel UpdateDensityTexture
 #pragma kernel UpdateWhiteParticles
-#pragma kernel WhiteParticlePrepareNextFrame;
+#pragma kernel WhiteParticlePrepareNextFrame
+#pragma kernel CalculateDriftVelocity
+#pragma kernel CalculateVolumeFraction
+#pragma kernel UpdateVolumeFraction
+#pragma kernel CalculateCMT
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -22,6 +26,15 @@ RWStructuredBuffer<float3> Positions;
 RWStructuredBuffer<float3> PredictedPositions;
 RWStructuredBuffer<float3> Velocities;
 RWStructuredBuffer<float2> Densities; // Density, Near Density
+
+// New Buffers
+RWStructuredBuffer<float> Mass;
+RWStructuredBuffer<float> PressureDelta;
+RWStructuredBuffer<float3> Acceleration;
+RWStructuredBuffer<float3> DriftVelocity_0;
+RWStructuredBuffer<float3> DriftVelocity_1;
+RWStructuredBuffer<float2> VolumeFraction;
+RWStructuredBuffer<float2> VolumeFractionRate;
 
 // Spatial hashing
 RWStructuredBuffer<uint> SpatialKeys;
@@ -40,7 +53,7 @@ const float smoothingRadius;
 const float targetDensity;
 const float pressureMultiplier;
 const float nearPressureMultiplier;
-const float viscosityStrength;
+//const float viscosityStrength;
 const float edgeForce;
 const float edgeForceDst;
 const float3 boundsSize;
@@ -51,6 +64,15 @@ const float4x4 worldToLocal;
 const float2 interactionInputPoint;
 const float interactionInputStrength;
 const float interactionInputRadius;
+
+// Multi phase settings
+const float2 phaseDensity;
+const float2 phaseMass;
+const float tau;
+const float sigma;
+const float2 viscosityStrength;
+const float mass;
+const bool miscible;
 
 // Volume texture settings
 RWTexture3D<float> DensityMap;
@@ -130,8 +152,6 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
     vel = mul(localToWorld, float4(velocityLocal, 0)).xyz;
 }
 
-//TODO :
-// 1. Mouse force 
 [numthreads(ThreadGroupSize, 1, 1)]
 void ExternalForces(uint3 id : SV_DispatchThreadID)
 {
@@ -164,6 +184,11 @@ RWStructuredBuffer<float3> SortTarget_Positions;
 RWStructuredBuffer<float3> SortTarget_PredictedPositions;
 RWStructuredBuffer<float3> SortTarget_Velocities;
 
+//New SortTarget Buffers
+RWStructuredBuffer<float> SortTarget_Mass;
+RWStructuredBuffer<float3> SortTarget_Acceleration;
+RWStructuredBuffer<float2> SortTarget_VolumeFraction;
+
 [numthreads(ThreadGroupSize, 1, 1)]
 void Reorder(uint3 id : SV_DispatchThreadID)
 {
@@ -173,6 +198,9 @@ void Reorder(uint3 id : SV_DispatchThreadID)
     SortTarget_Positions[id.x] = Positions[sortedIndex];
     SortTarget_PredictedPositions[id.x] = PredictedPositions[sortedIndex];
     SortTarget_Velocities[id.x] = Velocities[sortedIndex];
+    SortTarget_Mass[id.x] = Mass[sortedIndex];
+    SortTarget_Acceleration[id.x] = Acceleration[sortedIndex];
+    SortTarget_VolumeFraction[id.x] = VolumeFraction[sortedIndex];
 }
 
 [numthreads(ThreadGroupSize, 1, 1)]
@@ -184,6 +212,9 @@ void ReorderCopyBack(uint3 id : SV_DispatchThreadID)
     Positions[id.x] = SortTarget_Positions[id.x];
     PredictedPositions[id.x] = SortTarget_PredictedPositions[id.x];
     Velocities[id.x] = SortTarget_Velocities[id.x];
+    Mass[id.x] = SortTarget_Mass[id.x];
+	Acceleration[id.x] = SortTarget_Acceleration[id.x];
+	VolumeFraction[id.x] = SortTarget_VolumeFraction[id.x];
 }
 // TODO:
 // 1. add mass (done)
@@ -334,19 +365,19 @@ void CalculatePressureForce(uint3 id : SV_DispatchThreadID)
             neighbourCount++;
 
             // Update pressure force
-            pressureForce += dirToNeighbour * DensityDerivative(dstToNeighbour, smoothingRadius) * mass* sharedPressure / densityNeighbour;
+            pressureForce += dirToNeighbour * DensityDerivative(dstToNeighbour, smoothingRadius) * mass * sharedPressure / densityNeighbour;
             pressureForce += dirToNeighbour * NearDensityDerivative(dstToNeighbour, smoothingRadius) * mass * sharedNearPressure / nearDensityNeighbour;
 
-            // ---- White Particle 'Trapped Air' Calculation ----
-            float3 relativeVelocity = velocity - Velocities[neighbourIndex];
-            float relativeVelocityMagnitude = length(relativeVelocity);
-            float3 relativeVelocityDir = relativeVelocity / max(0.000001, relativeVelocityMagnitude);
-            // 0 if moving in opposite directions; up to 2 if moving directly toward one another
-            float convergeWeight = 1 - dot(relativeVelocityDir, -dirToNeighbour);
-            // 1 when distance between particles is 0, down to 0 when distance reaches the smoothing radius
-            float influence = 1 - min(1, dstToNeighbour / smoothingRadius);
-            // Sum up weighted velocity diff between current particle and each of its surrounding neighbours
-            weightedVelocityDifference += relativeVelocityMagnitude * convergeWeight * influence;
+            // // ---- White Particle 'Trapped Air' Calculation ----
+            // float3 relativeVelocity = velocity - Velocities[neighbourIndex];
+            // float relativeVelocityMagnitude = length(relativeVelocity);
+            // float3 relativeVelocityDir = relativeVelocity / max(0.000001, relativeVelocityMagnitude);
+            // // 0 if moving in opposite directions; up to 2 if moving directly toward one another
+            // float convergeWeight = 1 - dot(relativeVelocityDir, -dirToNeighbour);
+            // // 1 when distance between particles is 0, down to 0 when distance reaches the smoothing radius
+            // float influence = 1 - min(1, dstToNeighbour / smoothingRadius);
+            // // Sum up weighted velocity diff between current particle and each of its surrounding neighbours
+            // weightedVelocityDifference += relativeVelocityMagnitude * convergeWeight * influence;
         }
     }
 
@@ -354,64 +385,66 @@ void CalculatePressureForce(uint3 id : SV_DispatchThreadID)
     float3 velocityNew = velocity + acceleration * deltaTime;
     Velocities[id.x] = velocityNew;
     Acceleration[id.x] -= acceleration;
+
     // Quick test -- apply some drag to airborne fluid particles
-    if (neighbourCount < 8)
-    {
-        Velocities[id.x] -= Velocities[id.x] * deltaTime * 0.75;
-    }
+    // if (neighbourCount < 8)
+    // {
+    //     Velocities[id.x] -= Velocities[id.x] * deltaTime * 0.75;
+    // }
 
 
-    // ---- Handle spawning of white particles from the current fluid particle ----
-    uint rngState = dot(asuint(float4(pos, simTime)), uint4(19349669, 83492837, 73856131, 4785773));
-    if (id.x == 0) WhiteParticleCounters[1] = 0; // Reset survivor counter
+    //// ---- Handle spawning of white particles from the current fluid particle ----
+    //uint rngState = dot(asuint(float4(pos, simTime)), uint4(19349669, 83492837, 73856131, 4785773));
+    //if (id.x == 0) WhiteParticleCounters[1] = 0; // Reset survivor counter
 
-    float trappedAirFactor = trappedAirParams[0] * Remap01(weightedVelocityDifference, trappedAirParams[1], trappedAirParams[2]);
-    float kineticEnergyFactor = Remap01(dot(velocity, velocity), kineticEnergyParams[0], kineticEnergyParams[1]);
-    float particleSpawnFactor = trappedAirFactor * kineticEnergyFactor * deltaTime;
+    //float trappedAirFactor = trappedAirParams[0] * Remap01(weightedVelocityDifference, trappedAirParams[1], trappedAirParams[2]);
+    //float kineticEnergyFactor = Remap01(dot(velocity, velocity), kineticEnergyParams[0], kineticEnergyParams[1]);
+    //float particleSpawnFactor = trappedAirFactor * kineticEnergyFactor * deltaTime;
 
-    // Determine number of white particles to spawn. For example if the spawn factor is 3.7
-    // then we will spawn at least 3 particles, with a 70% chance of spawning a 4th particle
-    int particleSpawnCount = floor(particleSpawnFactor);
-    float fractionalSpawnRemainder = particleSpawnFactor - particleSpawnCount;
-    if (RandomValue(rngState) < fractionalSpawnRemainder) particleSpawnCount += 1;
+    //// Determine number of white particles to spawn. For example if the spawn factor is 3.7
+    //// then we will spawn at least 3 particles, with a 70% chance of spawning a 4th particle
+    //int particleSpawnCount = floor(particleSpawnFactor);
+    //float fractionalSpawnRemainder = particleSpawnFactor - particleSpawnCount;
+    //if (RandomValue(rngState) < fractionalSpawnRemainder) particleSpawnCount += 1;
 
-    //uint targ = NextRandom(rngState) % 4096;
+    ////uint targ = NextRandom(rngState) % 4096;
 
-    //InterlockedAdd(WhiteParticleCounters[targ], 1);
+    ////InterlockedAdd(WhiteParticleCounters[targ], 1);
 
-    if (particleSpawnCount > 0)
-    {
-        uint particleIndex;
-        InterlockedAdd(WhiteParticleCounters[0], (uint)particleSpawnCount, particleIndex);
-        particleSpawnCount = min(particleSpawnCount, MaxWhiteParticleCount - particleIndex - 1);
+    //if (particleSpawnCount > 0)
+    //{
+    //    uint particleIndex;
+    //    InterlockedAdd(WhiteParticleCounters[0], (uint)particleSpawnCount, particleIndex);
+    //    particleSpawnCount = min(particleSpawnCount, MaxWhiteParticleCount - particleIndex - 1);
 
-        float3 cylinderBase = pos;
-        float3 cylinderTop = pos + velocityNew * deltaTime; // height of cylinder determined by fluid velocity
-        float3 cylinderAxisA = CalculateOrthonormal(velocityNew); // arbitrary direction along base of cylinder
-        float3 cylinderAxisB = normalize(cross(cylinderAxisA, velocityNew));
-        float cylinderRadius = smoothingRadius;
-        float clusterMin, clusterMax;
-        for (int spawnIndex = 0; spawnIndex < particleSpawnCount; spawnIndex++)
-        {
-            float randomAngle = RandomValue(rngState) * 2 * 3.1415;
-            float3 offsetDir = cos(randomAngle) * cylinderAxisA + sin(randomAngle) * cylinderAxisB;
-            float3 baseOffset = sqrt(RandomValue(rngState)) * cylinderRadius * offsetDir; // random point on cylinder base
-            float3 spawnPos = cylinderBase + baseOffset + (cylinderTop - cylinderBase) * RandomValue(rngState);
+    //    float3 cylinderBase = pos;
+    //    float3 cylinderTop = pos + velocityNew * deltaTime; // height of cylinder determined by fluid velocity
+    //    float3 cylinderAxisA = CalculateOrthonormal(velocityNew); // arbitrary direction along base of cylinder
+    //    float3 cylinderAxisB = normalize(cross(cylinderAxisA, velocityNew));
+    //    float cylinderRadius = smoothingRadius;
+    //    float clusterMin, clusterMax;
+    //    for (int spawnIndex = 0; spawnIndex < particleSpawnCount; spawnIndex++)
+    //    {
+    //        float randomAngle = RandomValue(rngState) * 2 * 3.1415;
+    //        float3 offsetDir = cos(randomAngle) * cylinderAxisA + sin(randomAngle) * cylinderAxisB;
+    //        float3 baseOffset = sqrt(RandomValue(rngState)) * cylinderRadius * offsetDir; // random point on cylinder base
+    //        float3 spawnPos = cylinderBase + baseOffset + (cylinderTop - cylinderBase) * RandomValue(rngState);
 
-            float dissolveTimeMin = 5;
-            float dissolveTimeMax = 15;
-            float lifetime = lerp(dissolveTimeMin, dissolveTimeMax, RandomValue(rngState));
+    //        float dissolveTimeMin = 5;
+    //        float dissolveTimeMax = 15;
+    //        float lifetime = lerp(dissolveTimeMin, dissolveTimeMax, RandomValue(rngState));
 
-            // Spawn new particle
-            WhiteParticle whiteParticle;
-            whiteParticle.position = spawnPos;
-            whiteParticle.velocity = velocityNew + baseOffset;
-            whiteParticle.remainingLifetime = lifetime;
-            whiteParticle.scale = (bubbleScale + 1) / 2;
-            WhiteParticles[particleIndex + spawnIndex] = whiteParticle;
-        }
-    }
+    //        // Spawn new particle
+    //        WhiteParticle whiteParticle;
+    //        whiteParticle.position = spawnPos;
+    //        whiteParticle.velocity = velocityNew + baseOffset;
+    //        whiteParticle.remainingLifetime = lifetime;
+    //        whiteParticle.scale = (bubbleScale + 1) / 2;
+    //        WhiteParticles[particleIndex + spawnIndex] = whiteParticle;
+    //    }
+    //}
 }
+
 // TODO : Change the viscosity force
 [numthreads(ThreadGroupSize, 1, 1)]
 void CalculateViscosity(uint3 id : SV_DispatchThreadID)
@@ -427,7 +460,7 @@ void CalculateViscosity(uint3 id : SV_DispatchThreadID)
     float3 velocity = Velocities[id.x];
 
     float density_m = dot(VolumeFraction[id.x], phaseDensity);
-	float2 viscosity_i = dot(VolumeFraction[id.x], viscosityStrength);
+	float viscosity_i = dot(VolumeFraction[id.x], viscosityStrength);
     // Neighbour search
     for (int i = 0; i < 27; i++)
     {
@@ -463,7 +496,7 @@ void CalculateViscosity(uint3 id : SV_DispatchThreadID)
             float3 neighbourVelocity = Velocities[neighbourIndex];
             float neighbourDensity = Densities[neighbourIndex][0];
 			float viscosity_j = dot(VolumeFraction[neighbourIndex], viscosityStrength);
-			viscosityForce += (-1)*(mass/neighbourDensity)*(viscosity_i + viscosity_j)*(neighbourVelocity - velocity) * SpikyKernelPow2(dst, smoothingRadius);
+			viscosityForce += (mass)*(viscosity_i + viscosity_j)*(neighbourVelocity - velocity) * SpikyKernelPow2(dst, smoothingRadius);
         }
     }
     Velocities[id.x] += (viscosityForce/density_m) * deltaTime;
@@ -624,4 +657,286 @@ void WhiteParticlePrepareNextFrame(uint3 id : SV_DispatchThreadID)
 // 3. Calculate volume fraction 
 // 4. Update volume fraction
 // 5.  
+void CalcDriftVelocity(uint particleIndex)
+{
+    float3 pos = Positions[particleIndex];
+    float density_m = dot(VolumeFraction[particleIndex], phaseDensity);
+    float2 massFrac = float2(0.0, 0.0);
+    massFrac[0] = VolumeFraction[particleIndex][0] * phaseDensity[0] / density_m;
+    massFrac[1] = VolumeFraction[particleIndex][1] * phaseDensity[1] / density_m;
 
+    int3 originCell = GetCell3D(pos, smoothingRadius);
+    float sqrRadius = smoothingRadius * smoothingRadius;
+    float inertiaTerm_0 = (phaseDensity[0] - dot(massFrac, phaseDensity));
+    float inertiaTerm_1 = (phaseDensity[1] - dot(massFrac, phaseDensity));
+    float3 pressureGradient_0 = float3(0.0, 0.0, 0.0);
+    float3 pressureGradient_1 = float3(0.0, 0.0, 0.0);
+    float3 volumeFracGradient_0 = float3(0.0, 0.0, 0.0);
+    float3 volumeFracGradient_1 = float3(0.0, 0.0, 0.0);
+    float3 Vel_m0;
+    float3 Vel_m1;
+    // Neighbour search
+    for (int i = 0; i < 27; i++)
+    {
+        uint hash = HashCell3D(originCell + offsets3D[i]);
+        uint key = KeyFromHash(hash, numParticles);
+        uint currIndex = SpatialOffsets[key];
+
+        while (currIndex < numParticles)
+        {
+            uint neighbourIndex = currIndex;
+            currIndex++;
+
+            // Skip if looking at self
+            if (neighbourIndex == particleIndex) continue;
+
+            uint neighbourKey = SpatialKeys[neighbourIndex];
+            // Exit if no longer looking at correct bin
+            if (neighbourKey != key) break;
+
+            float3 neighbourPos = PredictedPositions[neighbourIndex];
+            float3 offsetToNeighbour = neighbourPos - pos;
+            float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
+
+            // Skip if not within radius
+            if (sqrDstToNeighbour > sqrRadius) continue;
+
+            // Calculate pressure force
+            float dst = sqrt(sqrDstToNeighbour);
+            float3 dirToNeighbour = dst > 0 ? -offsetToNeighbour / dst : -float3(0.0, 1.0, 0.0);
+
+            float neighbourDensity = Densities[neighbourIndex][0];
+
+            float neighbourPressure = PressureFromDensity(Densities[neighbourIndex][0], VolumeFraction[neighbourIndex]);
+            float particlePressure = PressureFromDensity(Densities[particleIndex][0], VolumeFraction[particleIndex]);
+
+            float neighbourVolumeFrac_0 = VolumeFraction[neighbourIndex][0];
+            float neighbourVolumeFrac_1 = VolumeFraction[neighbourIndex][1];
+            float number = 0;
+
+            // make toggle to enable DEMO
+            if (miscible) {
+                pressureGradient_0 += dirToNeighbour * (mass / neighbourDensity)
+                    * (neighbourPressure * neighbourVolumeFrac_0 - particlePressure * VolumeFraction[particleIndex][0]) * SpikyKernelPow2(dst, smoothingRadius);
+                pressureGradient_1 += dirToNeighbour * (mass / neighbourDensity)
+                    * (neighbourPressure * neighbourVolumeFrac_1 - particlePressure * VolumeFraction[particleIndex][1]) * SpikyKernelPow2(dst, smoothingRadius);
+            }
+            else {
+                pressureGradient_0 += dirToNeighbour * (mass / neighbourDensity)
+                    * (neighbourPressure - particlePressure) * SpikyKernelPow2(dst, smoothingRadius);
+                pressureGradient_1 += dirToNeighbour * (mass / neighbourDensity)
+                    * (neighbourPressure - particlePressure) * SpikyKernelPow2(dst, smoothingRadius);
+            }
+
+            volumeFracGradient_0 += dirToNeighbour * (mass / neighbourDensity)
+                * (neighbourVolumeFrac_0 - VolumeFraction[particleIndex][0]) * SpikyKernelPow2(dst, smoothingRadius);
+            volumeFracGradient_1 += dirToNeighbour * (mass / neighbourDensity)
+                * (neighbourVolumeFrac_1 - VolumeFraction[particleIndex][1]) * SpikyKernelPow2(dst, smoothingRadius);
+        }
+    }
+    float3 pressureGradient_avg = massFrac[0] * pressureGradient_0 + massFrac[1] * pressureGradient_1;
+    float3 volumeFracGradient_avg_q = float3(0.0, 0.0, 0.0);
+    if (VolumeFraction[particleIndex][0] > 0.01) {
+        volumeFracGradient_avg_q += massFrac[0] / VolumeFraction[particleIndex][0] * volumeFracGradient_0;
+    }
+    if (VolumeFraction[particleIndex][1] > 0.01) {
+        volumeFracGradient_avg_q += massFrac[1] / VolumeFraction[particleIndex][1] * volumeFracGradient_1;
+    }
+
+    if (VolumeFraction[particleIndex][0] > 0.01) {
+        Vel_m0 = tau * inertiaTerm_0 * Acceleration[particleIndex] - tau * (pressureGradient_0 - pressureGradient_avg)
+            - sigma * (volumeFracGradient_0 / VolumeFraction[particleIndex][0] - volumeFracGradient_avg_q);
+    }
+    else {
+        Vel_m0 = float3(0.0, 0.0, 0.0);
+    }
+
+    if (VolumeFraction[particleIndex][1] > 0.01) {
+        Vel_m1 = tau * inertiaTerm_1 * Acceleration[particleIndex] - tau * (pressureGradient_1 - pressureGradient_avg)
+            - sigma * (volumeFracGradient_1 / VolumeFraction[particleIndex][1] - volumeFracGradient_avg_q);
+    }
+    else {
+        Vel_m1 = float3(0.0, 0.0, 0.0);
+    }
+
+    DriftVelocity_0[particleIndex] = Vel_m0;
+    DriftVelocity_1[particleIndex] = Vel_m1;
+
+    Acceleration[particleIndex] = float3(0.0, 0.0, 0.0);
+}
+
+float2 CalculateVolumeFracRate(uint particleIndex)
+{
+    float3 pos = Positions[particleIndex];
+    int3 originCell = GetCell3D(pos, smoothingRadius);
+    float sqrRadius = smoothingRadius * smoothingRadius;
+    float2 volumeFracRate = float2(0.0, 0.0);
+    float2 AggregateMotion = float2(0.0, 0.0);
+    float2 Discrepancy = float2(0.0, 0.0);
+    float3 volumeFracGradient_0 = float3(0.0, 0.0, 0.0);
+    float3 volumeFracGradient_1 = float3(0.0, 0.0, 0.0);
+
+    // Neighbour search
+    for (int i = 0; i < 27; i++)
+    {
+        uint hash = HashCell3D(originCell + offsets3D[i]);
+        uint key = KeyFromHash(hash, numParticles);
+        uint currIndex = SpatialOffsets[key];
+
+        while (currIndex < numParticles)
+        {
+            uint neighbourIndex = currIndex;
+            currIndex++;
+
+            // Skip if looking at self
+            if (neighbourIndex == particleIndex) continue;
+
+            uint neighbourKey = SpatialKeys[neighbourIndex];
+            // Exit if no longer looking at correct bin
+            if (neighbourKey != key) break;
+
+            float3 neighbourPos = PredictedPositions[neighbourIndex];
+            float3 offsetToNeighbour = neighbourPos - pos;
+            float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
+
+            // Skip if not within radius
+            if (sqrDstToNeighbour > sqrRadius) continue;
+
+            // Calculate pressure force
+            float dst = sqrt(sqrDstToNeighbour);
+            float3 dirToNeighbour = dst > 0 ? -offsetToNeighbour / dst : -float3(0.0, 1.0, 0.0);
+
+            float neighbourDensity = Densities[neighbourIndex][0];
+
+            float neighbourVolumeFrac_0 = VolumeFraction[neighbourIndex][0];
+            float neighbourVolumeFrac_1 = VolumeFraction[neighbourIndex][1];
+
+            AggregateMotion[0] += (mass / neighbourDensity) * (VolumeFraction[particleIndex][0] + VolumeFraction[neighbourIndex][0]) * 0.5 *
+                dot(dirToNeighbour, Velocities[neighbourIndex] - Velocities[particleIndex]) * SpikyKernelPow2(dst, smoothingRadius);
+
+            AggregateMotion[1] += (mass / neighbourDensity) * (VolumeFraction[particleIndex][1] + VolumeFraction[neighbourIndex][1]) * 0.5 *
+                dot(dirToNeighbour, Velocities[neighbourIndex] - Velocities[particleIndex]) * SpikyKernelPow2(dst, smoothingRadius);
+
+            Discrepancy[0] += (mass / neighbourDensity) * SpikyKernelPow2(dst, smoothingRadius) *
+                dot(VolumeFraction[particleIndex][0] * DriftVelocity_0[particleIndex] + VolumeFraction[neighbourIndex][0] * DriftVelocity_0[neighbourIndex], dirToNeighbour);
+
+            Discrepancy[1] += (mass / neighbourDensity) * SpikyKernelPow2(dst, smoothingRadius) *
+                dot(VolumeFraction[particleIndex][1] * DriftVelocity_1[particleIndex] + VolumeFraction[neighbourIndex][1] * DriftVelocity_1[neighbourIndex], dirToNeighbour);
+
+            volumeFracGradient_0 += dirToNeighbour * (mass / neighbourDensity)
+                * (neighbourVolumeFrac_0 - VolumeFraction[particleIndex][0]) * SpikyKernelPow2(dst, smoothingRadius);
+            volumeFracGradient_1 += dirToNeighbour * (mass / neighbourDensity)
+                * (neighbourVolumeFrac_1 - VolumeFraction[particleIndex][1]) * SpikyKernelPow2(dst, smoothingRadius);
+        }
+    }
+
+    volumeFracRate[0] = -AggregateMotion[0] - Discrepancy[0] - dot(volumeFracGradient_0, Velocities[particleIndex]);
+    volumeFracRate[1] = -AggregateMotion[1] - Discrepancy[1] - dot(volumeFracGradient_1, Velocities[particleIndex]);
+    return volumeFracRate;
+}
+
+void UpdateVolumeFracRate(uint particleIndex)
+{
+    float minFraction = 0.0000001;
+    float2 newVolumeFrac = VolumeFraction[particleIndex] + VolumeFractionRate[particleIndex] * deltaTime;
+    newVolumeFrac = float2(max(0.0, newVolumeFrac[0]), max(0.0, newVolumeFrac[1]));
+
+    if (newVolumeFrac[0] < minFraction && newVolumeFrac[1] < minFraction)
+    {
+        newVolumeFrac[0] = minFraction;
+        newVolumeFrac[1] = minFraction;
+    }
+
+    float sum = newVolumeFrac[0] + newVolumeFrac[1];
+    newVolumeFrac = newVolumeFrac / sum; //Rescale to 1
+    float2 deltaVolumeFrac = newVolumeFrac - VolumeFraction[particleIndex];
+    VolumeFraction[particleIndex] = newVolumeFrac; // update volume fraction
+    float deltaPressure = (-pressureMultiplier) * dot(deltaVolumeFrac, phaseDensity);
+    PressureDelta[particleIndex] += deltaPressure;
+
+    Mass[particleIndex] = dot(phaseMass, VolumeFraction[particleIndex]);
+}
+
+[numthreads(ThreadGroupSize, 1, 1)]
+void CalculateDriftVelocity(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numParticles) return;
+
+    CalcDriftVelocity(id.x);
+}
+
+[numthreads(ThreadGroupSize, 1, 1)]
+void CalculateVolumeFraction(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numParticles) return;
+
+    VolumeFractionRate[id.x] = CalculateVolumeFracRate(id.x);
+}
+
+[numthreads(ThreadGroupSize, 1, 1)]
+void UpdateVolumeFraction(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numParticles) return;
+
+    UpdateVolumeFracRate(id.x);
+}
+
+[numthreads(ThreadGroupSize,1,1)]
+void CalculateCMT (uint3 id : SV_DispatchThreadID) //CMT: convective momentum transfer (T_Dm)
+{
+	if (id.x >= numParticles) return;
+		
+	float3 pos = PredictedPositions[id.x];
+	int3 originCell = GetCell3D(pos, smoothingRadius);
+	float sqrRadius = smoothingRadius * smoothingRadius;
+	float density_m = dot(VolumeFraction[id.x], phaseDensity);
+	float3 CMTForce = 0;
+	float3 u_m0i = DriftVelocity_0[id.x];
+	float3 u_m1i = DriftVelocity_1[id.x];  
+
+	for (int i = 0; i < 27; i ++)
+	{
+		uint hash = HashCell3D(originCell + offsets3D[i]);
+		uint key = KeyFromHash(hash, numParticles);
+		uint currIndex = SpatialOffsets[key];
+
+		while (currIndex < numParticles)
+		{
+			uint neighbourIndex = currIndex;
+			currIndex ++;
+
+			// Skip if looking at self
+			if (neighbourIndex == id.x) continue;
+			
+			uint neighbourKey = SpatialKeys[neighbourIndex];
+			// Exit if no longer looking at correct bin
+			if (neighbourKey != key) break;
+
+			float3 neighbourPos = PredictedPositions[neighbourIndex];
+			float3 offsetToNeighbour = neighbourPos - pos;
+			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
+
+			// Skip if not within radius
+			if (sqrDstToNeighbour > sqrRadius) continue;
+
+			float dst = sqrt(sqrDstToNeighbour);
+			float3 dirToNeighbour = dst > 0 ? offsetToNeighbour / dst : float3(0.0, 1.0, 0.0);
+
+			float3 neighbourVelocity = Velocities[neighbourIndex];
+			float neighbourDensity = Densities[neighbourIndex][0];
+			float3 u_m0j = DriftVelocity_0[neighbourIndex];
+			float3 u_m1j = DriftVelocity_1[neighbourIndex];
+			float3 CMT_term1 = 
+			phaseDensity[0]*(VolumeFraction[neighbourIndex][0] * u_m0j * dot(dirToNeighbour, u_m0j) * SpikyKernelPow2(dst, smoothingRadius)
+							+ VolumeFraction[id.x][0] * u_m0i * dot(dirToNeighbour, u_m0i) * SpikyKernelPow2(dst, smoothingRadius));
+			float3 CMT_term2 = 
+			phaseDensity[1]*(VolumeFraction[neighbourIndex][1] * u_m1j * dot(dirToNeighbour, u_m1j) * SpikyKernelPow2(dst, smoothingRadius)
+							+ VolumeFraction[id.x][1] * u_m1i * dot(dirToNeighbour, u_m1i) * SpikyKernelPow2(dst, smoothingRadius));
+
+			CMTForce += (mass/neighbourDensity) * (CMT_term1 + CMT_term2);
+		}
+
+	}
+	Velocities[id.x] += (CMTForce / density_m) * deltaTime;
+	Acceleration[id.x] -= (CMTForce / density_m);
+}

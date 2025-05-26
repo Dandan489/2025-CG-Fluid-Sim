@@ -211,6 +211,12 @@ namespace Seb.Fluid.Simulation
 				sortTarget_predictedPositionsBuffer,
 				velocityBuffer,
 				sortTarget_velocityBuffer,
+				massBuffer,
+				sortTarget_Mass,
+				accelBuffer,
+				sortTarget_Acceleration,
+				volumeFractionBuffer,
+				sortTarget_VolumeFraction,
 				spatialHash.SpatialIndices
 			});
 
@@ -223,6 +229,13 @@ namespace Seb.Fluid.Simulation
 				sortTarget_predictedPositionsBuffer,
 				velocityBuffer,
 				sortTarget_velocityBuffer,
+				sortTarget_velocityBuffer,
+				massBuffer,
+				sortTarget_Mass,
+				accelBuffer,
+				sortTarget_Acceleration,
+				volumeFractionBuffer,
+				sortTarget_VolumeFraction,
 				spatialHash.SpatialIndices
 			});
 
@@ -231,6 +244,7 @@ namespace Seb.Fluid.Simulation
 			{
 				predictedPositionsBuffer,
 				densityBuffer,
+				massBuffer,
 				spatialHash.SpatialKeys,
 				spatialHash.SpatialOffsets
 			});
@@ -239,8 +253,12 @@ namespace Seb.Fluid.Simulation
 			SetBuffers(compute, pressureKernel, bufferNameLookup, new ComputeBuffer[]
 			{
 				predictedPositionsBuffer,
+				pressureDeltaBuffer,
 				densityBuffer,
 				velocityBuffer,
+				massBuffer,
+				volumeFractionBuffer,
+				accelBuffer,
 				spatialHash.SpatialKeys,
 				spatialHash.SpatialOffsets,
 				foamBuffer,
@@ -254,6 +272,9 @@ namespace Seb.Fluid.Simulation
 				predictedPositionsBuffer,
 				densityBuffer,
 				velocityBuffer,
+				volumeFractionBuffer,
+				massBuffer,
+				accelBuffer,
 				spatialHash.SpatialKeys,
 				spatialHash.SpatialOffsets
 			});
@@ -299,25 +320,57 @@ namespace Seb.Fluid.Simulation
 			// Drift velocity kernel
 			SetBuffers(compute, driftVelocityKernel, bufferNameLookup, new ComputeBuffer[]
 			{
-				
+				driftVelocityBuffer_0,
+				driftVelocityBuffer_1,
+				accelBuffer,
+				volumeFractionBuffer,
+				massBuffer,
+				spatialHash.SpatialKeys,
+				spatialHash.SpatialOffsets,
+				positionBuffer,
+				predictedPositionsBuffer,
+				densityBuffer,
 			});
 
 			// Volume fraction calculate kernel
-			SetBuffers(compute, volumeFractionUpdateKernel, bufferNameLookup, new ComputeBuffer[]
+			SetBuffers(compute, volumeFractionCalculateKernel, bufferNameLookup, new ComputeBuffer[]
 			{
-				
+				driftVelocityBuffer_0,
+				driftVelocityBuffer_1,
+				volumeFractionBuffer,
+				volumeFractionRateBuffer,
+				massBuffer,
+				spatialHash.SpatialKeys,
+				spatialHash.SpatialOffsets,
+				positionBuffer,
+				predictedPositionsBuffer,
+				densityBuffer,
+				velocityBuffer,
 			});
 
-			// Volume fraction update calculate kernel
+			// Volume fraction update kernel
 			SetBuffers(compute, volumeFractionUpdateKernel, bufferNameLookup, new ComputeBuffer[]
 			{
-				
+				pressureDeltaBuffer,
+				volumeFractionRateBuffer,
+				volumeFractionBuffer,
+				massBuffer,
 			});
 
-			// CMT force calculation kernel
-			SetBuffers(compute, driftVelocityKernel, bufferNameLookup, new ComputeBuffer[]
+			// Calculate CMT kernel
+			SetBuffers(compute, calculateCMTKernel, bufferNameLookup, new ComputeBuffer[]
 			{
-				
+				predictedPositionsBuffer,
+				pressureDeltaBuffer,
+				densityBuffer,
+				velocityBuffer,
+				massBuffer,
+				volumeFractionBuffer,
+				accelBuffer,
+				spatialHash.SpatialKeys,
+				spatialHash.SpatialOffsets,
+				driftVelocityBuffer_0,
+				driftVelocityBuffer_1,
 			});
 
 			compute.SetInt("numParticles", positionBuffer.count);
@@ -400,15 +453,18 @@ namespace Seb.Fluid.Simulation
 			Dispatch(compute, positionBuffer.count, kernelIndex: spatialHashKernel);
 			spatialHash.Run();
 
-			Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
-			Dispatch(compute, positionBuffer.count, kernelIndex: driftVelocityKernel);
-			Dispatch(compute, positionBuffer.count, kernelIndex: volumeFractionCalculateKernel);
-			Dispatch(compute, positionBuffer.count, kernelIndex: volumeFractionUpdateKernel);
-			
 			Dispatch(compute, positionBuffer.count, kernelIndex: reorderKernel);
 			Dispatch(compute, positionBuffer.count, kernelIndex: reorderCopybackKernel);
 
 			Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
+			Dispatch(compute, positionBuffer.count, kernelIndex: driftVelocityKernel);
+			if (miscible)
+			{
+				Dispatch(compute, positionBuffer.count, kernelIndex: volumeFractionCalculateKernel);
+				Dispatch(compute, positionBuffer.count, kernelIndex: volumeFractionUpdateKernel);
+			}
+			
+			//Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
 			Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
 			Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
 			Dispatch(compute, positionBuffer.count, kernelIndex: calculateCMTKernel);
