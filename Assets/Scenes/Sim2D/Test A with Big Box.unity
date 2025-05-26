@@ -184,11 +184,11 @@ MonoBehaviour:
   targetDensity: 55
   pressureMultiplier: 500
   nearPressureMultiplier: 5
-  boundsSize: {x: 17.1, y: 9.3}
+  boundsSize: {x: 30, y: 25}
   obstacleSize: {x: 0, y: 0}
-  obstacleCentre: {x: 0, y: 0}
-  interactionRadius: 2
-  interactionStrength: 90
+  obstacleCentre: {x: 0, y: -35}
+  interactionRadius: 5
+  interactionStrength: 120
   compute: {fileID: 7200000, guid: 1c77ce8de78fddb419ed2d15cae41af0, type: 3}
   spawner2D: {fileID: 271053320}
 --- !u!114 &271053320
@@ -207,16 +207,16 @@ MonoBehaviour:
   initialVelocity: {x: 0, y: -1}
   jitterStr: 0.03
   spawnRegions:
-  - position: {x: 5, y: -1}
-    size: {x: 7, y: 7}
+  - position: {x: 8, y: -5}
+    size: {x: 10, y: 10}
     mass: 4
     debugCol: {r: 0.27843142, g: 0.4205825, b: 1, a: 1}
-  - position: {x: -5, y: -1}
-    size: {x: 7, y: 7}
+  - position: {x: -8, y: -5}
+    size: {x: 10, y: 10}
     mass: 5
     debugCol: {r: 1, g: 0.31536943, b: 0.27843142, a: 1}
   showSpawnBoundsGizmos: 1
-  spawnParticleCount: 15842
+  spawnParticleCount: 32258
 --- !u!114 &271053323
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -326,7 +326,7 @@ Camera:
   far clip plane: 1000
   field of view: 60
   orthographic: 1
-  orthographic size: 5
+  orthographic size: 13
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2

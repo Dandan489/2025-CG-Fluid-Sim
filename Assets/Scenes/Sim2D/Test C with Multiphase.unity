@@ -133,7 +133,7 @@ GameObject:
   - component: {fileID: 271053318}
   - component: {fileID: 271053319}
   - component: {fileID: 271053320}
-  - component: {fileID: 271053323}
+  - component: {fileID: 271053322}
   m_Layer: 0
   m_Name: Simulation
   m_TagString: Untagged
@@ -173,22 +173,22 @@ MonoBehaviour:
   tau: 0.000001
   sigma: 10
   viscosityStrength: {x: 1, y: 1}
-  mass: 4
+  mass: 1
   miscible: 1
   timeScale: 1
   maxTimestepFPS: 60
   iterationsPerFrame: 3
-  gravity: -12
-  collisionDamping: 0.3
-  smoothingRadius: 0.35
-  targetDensity: 55
-  pressureMultiplier: 500
+  gravity: -13
+  collisionDamping: 0.5
+  smoothingRadius: 0.175
+  targetDensity: 234
+  pressureMultiplier: 225
   nearPressureMultiplier: 5
-  boundsSize: {x: 17.1, y: 9.3}
-  obstacleSize: {x: 0, y: 0}
-  obstacleCentre: {x: 0, y: 0}
-  interactionRadius: 2
-  interactionStrength: 90
+  boundsSize: {x: 43.1, y: 23.86}
+  obstacleSize: {x: 20.4, y: 1.69}
+  obstacleCentre: {x: 7.5, y: -8.16}
+  interactionRadius: 2.5
+  interactionStrength: 75
   compute: {fileID: 7200000, guid: 1c77ce8de78fddb419ed2d15cae41af0, type: 3}
   spawner2D: {fileID: 271053320}
 --- !u!114 &271053320
@@ -203,21 +203,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 895837b52d5fc53409ded3589d4da696, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnDensity: 159
-  initialVelocity: {x: 0, y: -1}
+  spawnDensity: 500
+  initialVelocity: {x: 0, y: 0}
   jitterStr: 0.03
   spawnRegions:
-  - position: {x: 5, y: -1}
-    size: {x: 7, y: 7}
+  - position: {x: 0, y: 2.95}
+    size: {x: 34, y: 15}
     mass: 4
-    debugCol: {r: 0.27843142, g: 0.4205825, b: 1, a: 1}
-  - position: {x: -5, y: -1}
-    size: {x: 7, y: 7}
-    mass: 5
-    debugCol: {r: 1, g: 0.31536943, b: 0.27843142, a: 1}
+    debugCol: {r: 1, g: 0.2783019, b: 0.2783019, a: 1}
   showSpawnBoundsGizmos: 1
-  spawnParticleCount: 15842
---- !u!114 &271053323
+  spawnParticleCount: 255696
+--- !u!114 &271053322
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -232,21 +228,21 @@ MonoBehaviour:
   sim: {fileID: 271053319}
   mesh: {fileID: 10210, guid: 0000000000000000e000000000000000, type: 0}
   shader: {fileID: 4800000, guid: 441b7193936682446b30d2140d15792a, type: 3}
-  scale: 0.08
+  scale: 0.07
   colourMap:
     serializedVersion: 2
-    key0: {r: 0.13363299, g: 0.34235913, b: 0.7264151, a: 1}
-    key1: {r: 0.2980392, g: 1, b: 0.56327766, a: 1}
-    key2: {r: 1, g: 0.9309917, b: 0, a: 0}
-    key3: {r: 0.96862745, g: 0.28555763, b: 0.031372573, a: 0}
+    key0: {r: 0.11534355, g: 0.2537607, b: 0.9056604, a: 1}
+    key1: {r: 0.6273585, g: 0.8659867, b: 1, a: 1}
+    key2: {r: 1, g: 1, b: 1, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
     key4: {r: 0, g: 0, b: 0, a: 0}
     key5: {r: 0, g: 0, b: 0, a: 0}
     key6: {r: 0, g: 0, b: 0, a: 0}
     key7: {r: 0, g: 0, b: 0, a: 0}
-    ctime0: 4064
-    ctime1: 33191
-    ctime2: 46738
-    ctime3: 65535
+    ctime0: 0
+    ctime1: 59607
+    ctime2: 65535
+    ctime3: 0
     ctime4: 0
     ctime5: 0
     ctime6: 0
@@ -261,10 +257,10 @@ MonoBehaviour:
     atime7: 0
     m_Mode: 2
     m_ColorSpace: -1
-    m_NumColorKeys: 4
+    m_NumColorKeys: 3
     m_NumAlphaKeys: 2
   gradientResolution: 64
-  velocityDisplayMax: 6.5
+  velocityDisplayMax: 15
 --- !u!1 &963194225
 GameObject:
   m_ObjectHideFlags: 0
@@ -326,7 +322,7 @@ Camera:
   far clip plane: 1000
   field of view: 60
   orthographic: 1
-  orthographic size: 5
+  orthographic size: 13
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2

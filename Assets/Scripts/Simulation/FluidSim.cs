@@ -12,6 +12,15 @@ namespace Seb.Fluid.Simulation
 	{
 		public event Action<FluidSim> SimulationInitCompleted;
 
+		[Header("Multi-Phase Settings")]
+		public Vector2 phaseDensity = new(600, 720);
+		public Vector2 phaseMass = new(4, 5);
+		public float tau = 1e-06f;
+		public float sigma = 10;
+		public Vector2 viscosityStrength = new(1, 1);
+		public float mass = 1;
+		public bool miscible = true;
+
 		[Header("Time Step")] public float normalTimeScale = 1;
 		public float slowTimeScale = 0.1f;
 		public float maxTimestepFPS = 60; // if time-step dips lower than this fps, simulation will run slower (set to 0 to disable)
@@ -22,7 +31,7 @@ namespace Seb.Fluid.Simulation
 		public float targetDensity = 630;
 		public float pressureMultiplier = 288;
 		public float nearPressureMultiplier = 2.15f;
-		public float viscosityStrength = 0;
+		// public float viscosityStrength = 0;
 		[Range(0, 1)] public float collisionDamping = 0.95f;
 
 		[Header("Foam Settings")] public bool foamActive;
@@ -57,9 +66,24 @@ namespace Seb.Fluid.Simulation
 		public ComputeBuffer predictedPositionsBuffer;
 		public ComputeBuffer debugBuffer { get; private set; }
 
+		// New Buffers
+		public ComputeBuffer massBuffer { get; private set; }
+		public ComputeBuffer accelBuffer { get; private set; }
+		public ComputeBuffer driftVelocityBuffer_0 { get; private set; }
+		public ComputeBuffer driftVelocityBuffer_1 { get; private set; }
+
+		public ComputeBuffer volumeFractionBuffer { get; private set; }
+		public ComputeBuffer volumeFractionRateBuffer { get; private set; }
+		public ComputeBuffer pressureDeltaBuffer { get; private set; }
+
 		ComputeBuffer sortTarget_positionBuffer;
 		ComputeBuffer sortTarget_velocityBuffer;
 		ComputeBuffer sortTarget_predictedPositionsBuffer;
+
+		// New Sort Buffers
+		ComputeBuffer sortTarget_Mass;
+		ComputeBuffer sortTarget_Acceleration;
+		ComputeBuffer sortTarget_VolumeFraction;
 
 		// Kernel IDs
 		const int externalForcesKernel = 0;
@@ -73,6 +97,10 @@ namespace Seb.Fluid.Simulation
 		const int renderKernel = 8;
 		const int foamUpdateKernel = 9;
 		const int foamReorderCopyBackKernel = 10;
+		const int driftVelocityKernel = 11;
+		const int volumeFractionCalculateKernel = 12;
+		const int volumeFractionUpdateKernel = 13;
+		const int calculateCMTKernel = 14;
 
 		SpatialHash spatialHash;
 
@@ -110,9 +138,21 @@ namespace Seb.Fluid.Simulation
 			foamCountBuffer = CreateStructuredBuffer<uint>(4096);
 			debugBuffer = CreateStructuredBuffer<float3>(numParticles);
 
+			massBuffer = CreateStructuredBuffer<float>(numParticles);
+			accelBuffer = CreateStructuredBuffer<float2>(numParticles);
+			driftVelocityBuffer_0 = CreateStructuredBuffer<float2>(numParticles);
+			driftVelocityBuffer_1 = CreateStructuredBuffer<float2>(numParticles);
+			volumeFractionBuffer = CreateStructuredBuffer<float2>(numParticles);
+			volumeFractionRateBuffer = CreateStructuredBuffer<float2>(numParticles);
+			pressureDeltaBuffer = CreateStructuredBuffer<float>(numParticles);
+
 			sortTarget_positionBuffer = CreateStructuredBuffer<float3>(numParticles);
 			sortTarget_predictedPositionsBuffer = CreateStructuredBuffer<float3>(numParticles);
 			sortTarget_velocityBuffer = CreateStructuredBuffer<float3>(numParticles);
+
+			sortTarget_Mass = CreateStructuredBuffer<float>(numParticles);
+			sortTarget_Acceleration = CreateStructuredBuffer<float2>(numParticles);
+			sortTarget_VolumeFraction = CreateStructuredBuffer<float2>(numParticles);
 
 			bufferNameLookup = new Dictionary<ComputeBuffer, string>
 			{
@@ -129,7 +169,17 @@ namespace Seb.Fluid.Simulation
 				{ foamCountBuffer, "WhiteParticleCounters" },
 				{ foamBuffer, "WhiteParticles" },
 				{ foamSortTargetBuffer, "WhiteParticlesCompacted" },
-				{ debugBuffer, "Debug" }
+				{ debugBuffer, "Debug" },
+				{ massBuffer, "Mass"},
+				{ accelBuffer, "Acceleration"},
+				{ driftVelocityBuffer_0, "DriftVelocity_0"},
+				{ driftVelocityBuffer_1, "DriftVelocity_1"},
+				{ volumeFractionBuffer, "VolumeFraction"},
+				{ volumeFractionRateBuffer, "VolumeFractionRate"},
+				{ pressureDeltaBuffer, "PressureDelta"},
+				{ sortTarget_Mass, "SortTarget_Mass"},
+				{ sortTarget_Acceleration, "SortTarget_Acceleration"},
+				{ sortTarget_VolumeFraction, "SortTarget_VolumeFraction"},
 			};
 
 			// Set buffer data
@@ -238,13 +288,36 @@ namespace Seb.Fluid.Simulation
 				//debugBuffer
 			});
 
-
 			// Foam reorder copyback kernel
 			SetBuffers(compute, foamReorderCopyBackKernel, bufferNameLookup, new ComputeBuffer[]
 			{
 				foamBuffer,
 				foamSortTargetBuffer,
 				foamCountBuffer,
+			});
+
+			// Drift velocity kernel
+			SetBuffers(compute, driftVelocityKernel, bufferNameLookup, new ComputeBuffer[]
+			{
+				
+			});
+
+			// Volume fraction calculate kernel
+			SetBuffers(compute, volumeFractionUpdateKernel, bufferNameLookup, new ComputeBuffer[]
+			{
+				
+			});
+
+			// Volume fraction update calculate kernel
+			SetBuffers(compute, volumeFractionUpdateKernel, bufferNameLookup, new ComputeBuffer[]
+			{
+				
+			});
+
+			// CMT force calculation kernel
+			SetBuffers(compute, driftVelocityKernel, bufferNameLookup, new ComputeBuffer[]
+			{
+				
 			});
 
 			compute.SetInt("numParticles", positionBuffer.count);
@@ -326,13 +399,20 @@ namespace Seb.Fluid.Simulation
 
 			Dispatch(compute, positionBuffer.count, kernelIndex: spatialHashKernel);
 			spatialHash.Run();
+
+			Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
+			Dispatch(compute, positionBuffer.count, kernelIndex: driftVelocityKernel);
+			Dispatch(compute, positionBuffer.count, kernelIndex: volumeFractionCalculateKernel);
+			Dispatch(compute, positionBuffer.count, kernelIndex: volumeFractionUpdateKernel);
 			
 			Dispatch(compute, positionBuffer.count, kernelIndex: reorderKernel);
 			Dispatch(compute, positionBuffer.count, kernelIndex: reorderCopybackKernel);
 
 			Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
 			Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
-			if (viscosityStrength != 0) Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
+			Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
+			Dispatch(compute, positionBuffer.count, kernelIndex: calculateCMTKernel);
+
 			Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
 		}
 
@@ -370,7 +450,7 @@ namespace Seb.Fluid.Simulation
 			compute.SetFloat("targetDensity", targetDensity);
 			compute.SetFloat("pressureMultiplier", pressureMultiplier);
 			compute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
-			compute.SetFloat("viscosityStrength", viscosityStrength);
+			compute.SetVector("viscosityStrength", viscosityStrength);
 			compute.SetVector("boundsSize", simBoundsSize);
 			compute.SetVector("centre", simBoundsCentre);
 
@@ -386,6 +466,14 @@ namespace Seb.Fluid.Simulation
 			compute.SetInt("bubbleClassifyMinNeighbours", bubbleClassifyMinNeighbours);
 			compute.SetFloat("bubbleScaleChangeSpeed", bubbleChangeScaleSpeed);
 			compute.SetFloat("bubbleScale", bubbleScale);
+
+			// Multiphase settings
+			compute.SetVector("phaseDensity", phaseDensity);
+			compute.SetVector("phaseMass", phaseMass);
+			compute.SetFloat("sigma", sigma);
+			compute.SetFloat("tau", tau);
+			compute.SetFloat("mass", mass);
+			compute.SetBool("miscible", miscible);
 		}
 
 		void SetInitialBufferData(Spawner3D.SpawnData spawnData)
@@ -393,12 +481,29 @@ namespace Seb.Fluid.Simulation
 			positionBuffer.SetData(spawnData.points);
 			predictedPositionsBuffer.SetData(spawnData.points);
 			velocityBuffer.SetData(spawnData.velocities);
+			massBuffer.SetData(spawnData.mass);
 
 			foamBuffer.SetData(new FoamParticle[foamBuffer.count]);
 
 			debugBuffer.SetData(new float3[debugBuffer.count]);
 			foamCountBuffer.SetData(new uint[foamCountBuffer.count]);
 			simTimer = 0;
+
+			float[] zeros = new float[pressureDeltaBuffer.count];
+			float2[] zero2s = new float2[volumeFractionBuffer.count];
+			pressureDeltaBuffer.SetData(zeros);
+			volumeFractionRateBuffer.SetData(zero2s);
+
+			float[] mass = spawnData.mass;
+			float2[] volumeFraction = new float2[volumeFractionBuffer.count];
+			float2[] gs = new float2[accelBuffer.count];
+			for (int i = 0; i < volumeFractionBuffer.count; i++)
+			{
+				volumeFraction[i] = mass[i] == phaseMass[0] ? new float2(1f, 0f) : new float2(0f, 1f);
+				gs[i] = new float2(0f, gravity);
+			}
+			accelBuffer.SetData(gs);
+			volumeFractionBuffer.SetData(volumeFraction);
 		}
 
 		void HandleInput()

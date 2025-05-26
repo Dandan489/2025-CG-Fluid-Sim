@@ -22,23 +22,26 @@ namespace Seb.Fluid.Simulation
 		{
 			List<float3> allPoints = new();
 			List<float3> allVelocities = new();
+			List<float> allMasses = new();
 
 			foreach (SpawnRegion region in spawnRegions)
 			{
 				int particlesPerAxis = region.CalculateParticleCountPerAxis(particleSpawnDensity);
-				(float3[] points, float3[] velocities) = SpawnCube(particlesPerAxis, region.centre, Vector3.one * region.size);
+				(float3[] points, float3[] velocities, float[] masses) = SpawnCube(particlesPerAxis, region.centre, Vector3.one * region.size, region.mass);
 				allPoints.AddRange(points);
 				allVelocities.AddRange(velocities);
+				allMasses.AddRange(masses);
 			}
 
-			return new SpawnData() { points = allPoints.ToArray(), velocities = allVelocities.ToArray() };
+			return new SpawnData() { points = allPoints.ToArray(), velocities = allVelocities.ToArray(), mass = allMasses.ToArray() };
 		}
 
-		(float3[] p, float3[] v) SpawnCube(int numPerAxis, Vector3 centre, Vector3 size)
+		(float3[] p, float3[] v, float[] c) SpawnCube(int numPerAxis, Vector3 centre, Vector3 size, float mass)
 		{
 			int numPoints = numPerAxis * numPerAxis * numPerAxis;
 			float3[] points = new float3[numPoints];
 			float3[] velocities = new float3[numPoints];
+			float[] masses = new float[numPoints];
 
 			int i = 0;
 
@@ -58,12 +61,13 @@ namespace Seb.Fluid.Simulation
 						float3 jitter = UnityEngine.Random.insideUnitSphere * jitterStrength;
 						points[i] = new float3(px, py, pz) + jitter;
 						velocities[i] = initialVel;
+						masses[i] = mass;
 						i++;
 					}
 				}
 			}
 
-			return (points, velocities);
+			return (points, velocities, masses);
 		}
 
 
@@ -101,6 +105,7 @@ namespace Seb.Fluid.Simulation
 		{
 			public Vector3 centre;
 			public float size;
+			public float mass;
 			public Color debugDisplayCol;
 
 			public float Volume => size * size * size;
@@ -117,6 +122,7 @@ namespace Seb.Fluid.Simulation
 		{
 			public float3[] points;
 			public float3[] velocities;
+			public float[] mass;
 		}
 	}
 }

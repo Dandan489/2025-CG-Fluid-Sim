@@ -60,6 +60,8 @@ const float2 phaseMass;
 const float tau; // 0.000001
 const float sigma; // 0.001
 const float2 viscosityStrength;
+const float mass;
+const bool miscible;
 
 float DensityKernel(float dst, float radius)
 {
@@ -86,7 +88,7 @@ float ViscosityKernel(float dst, float radius)
 	return SmoothingKernelPoly6(dst, smoothingRadius);
 }
 
-float2 CalculateDensity(float2 pos, float mass)
+float2 CalculateDensity(float2 pos)
 {
 	int2 originCell = GetCell2D(pos, smoothingRadius);
 	float sqrRadius = smoothingRadius * smoothingRadius;
@@ -122,9 +124,10 @@ float2 CalculateDensity(float2 pos, float mass)
 			nearDensity += NearDensityKernel(dst, smoothingRadius) * mass;
 		}
 	}
-	if(density == 0.0){
-		return float2(100, mass);
-	}
+	//errro handling 
+	// if(density == 0.0){
+	// 	return float2(100, mass);
+	// }
 
 	return float2(density, nearDensity);
 }
@@ -265,15 +268,24 @@ void CalcDriftVelocity(uint particleIndex)
 			float number = 0;
 
 			// make toggle to enable DEMO
-            pressureGradient_0 += dirToNeighbour * (Mass[neighbourIndex]/neighbourDensity)
-                                *(neighbourPressure * neighbourVolumeFrac_0  - particlePressure * VolumeFraction[particleIndex][0]) * SpikyKernelPow2(dst, smoothingRadius);
-            pressureGradient_1 += dirToNeighbour * (Mass[neighbourIndex]/neighbourDensity)
-                                *(neighbourPressure * neighbourVolumeFrac_1 - particlePressure *  VolumeFraction[particleIndex][1]) * SpikyKernelPow2(dst, smoothingRadius);
+			if(miscible){
+				pressureGradient_0 += dirToNeighbour * (mass/neighbourDensity)
+                                * (neighbourPressure * neighbourVolumeFrac_0 - particlePressure * VolumeFraction[particleIndex][0]) * SpikyKernelPow2(dst, smoothingRadius);
+            	pressureGradient_1 += dirToNeighbour * (mass/neighbourDensity)
+                                * (neighbourPressure * neighbourVolumeFrac_1 - particlePressure * VolumeFraction[particleIndex][1]) * SpikyKernelPow2(dst, smoothingRadius);
+			}
+			else{
+				pressureGradient_0 += dirToNeighbour * (mass/neighbourDensity)
+                                * (neighbourPressure - particlePressure) * SpikyKernelPow2(dst, smoothingRadius);
+            	pressureGradient_1 += dirToNeighbour * (mass/neighbourDensity)
+                                * (neighbourPressure - particlePressure) * SpikyKernelPow2(dst, smoothingRadius);
+			}
             
-            volumeFracGradient_0 += dirToNeighbour * (Mass[neighbourIndex]/neighbourDensity)
-                                *(neighbourVolumeFrac_0 - VolumeFraction[particleIndex][0]) * SpikyKernelPow2(dst, smoothingRadius);
-            volumeFracGradient_1 += dirToNeighbour * (Mass[neighbourIndex]/neighbourDensity)
-                                *(neighbourVolumeFrac_1 - VolumeFraction[particleIndex][1]) * SpikyKernelPow2(dst, smoothingRadius);
+            
+            volumeFracGradient_0 += dirToNeighbour * (mass/neighbourDensity)
+                                * (neighbourVolumeFrac_0 - VolumeFraction[particleIndex][0]) * SpikyKernelPow2(dst, smoothingRadius);
+            volumeFracGradient_1 += dirToNeighbour * (mass/neighbourDensity)
+                                * (neighbourVolumeFrac_1 - VolumeFraction[particleIndex][1]) * SpikyKernelPow2(dst, smoothingRadius);
         }
     }
     float2 pressureGradient_avg = massFrac[0] * pressureGradient_0 + massFrac[1] * pressureGradient_1;
@@ -353,45 +365,46 @@ float2 CalculateVolumeFracRate(uint particleIndex)
 			float neighbourVolumeFrac_0 = VolumeFraction[neighbourIndex][0];
             float neighbourVolumeFrac_1 = VolumeFraction[neighbourIndex][1];
 
-            AggregateMotion[0] += (Mass[particleIndex]/neighbourDensity) * (VolumeFraction[particleIndex][0] + VolumeFraction[neighbourIndex][0]) * 0.5 * 
+            AggregateMotion[0] += (mass/neighbourDensity) * (VolumeFraction[particleIndex][0] + VolumeFraction[neighbourIndex][0]) * 0.5 * 
                                   dot(dirToNeighbour, Velocities[neighbourIndex] - Velocities[particleIndex]) * SpikyKernelPow2(dst, smoothingRadius);
 
-			if(isnan(AggregateMotion[0])){
-				volumeFracRate[0] = 100;
-				volumeFracRate[1] = neighbourDensity;
-				return volumeFracRate;
-			}
+			//proper error handling
+			// if(isnan(AggregateMotion[0])){
+			// 	volumeFracRate[0] = 100;
+			// 	volumeFracRate[1] = neighbourDensity;
+			// 	return volumeFracRate;
+			// }
 			
-            AggregateMotion[1] += (Mass[particleIndex]/neighbourDensity) * (VolumeFraction[particleIndex][1] + VolumeFraction[neighbourIndex][1]) * 0.5 * 
+            AggregateMotion[1] += (mass/neighbourDensity) * (VolumeFraction[particleIndex][1] + VolumeFraction[neighbourIndex][1]) * 0.5 * 
                                   dot(dirToNeighbour, Velocities[neighbourIndex] - Velocities[particleIndex]) * SpikyKernelPow2(dst, smoothingRadius);
             
-			if(isnan(AggregateMotion[1])){
-				volumeFracRate[0] = 200;
-				volumeFracRate[1] = neighbourDensity;
-				return volumeFracRate;
-			}
+			// if(isnan(AggregateMotion[1])){
+			// 	volumeFracRate[0] = 200;
+			// 	volumeFracRate[1] = neighbourDensity;
+			// 	return volumeFracRate;
+			// }
 
-            Discrepancy[0] += (Mass[particleIndex]/neighbourDensity) * SpikyKernelPow2(dst, smoothingRadius) *
+            Discrepancy[0] += (mass/neighbourDensity) * SpikyKernelPow2(dst, smoothingRadius) *
                             dot(VolumeFraction[particleIndex][0] * DriftVelocity_0[particleIndex] + VolumeFraction[neighbourIndex][0] * DriftVelocity_0[neighbourIndex], dirToNeighbour);
             
-			if(isnan(Discrepancy[0])){
-				volumeFracRate[0] = 300;
-				volumeFracRate[1] = neighbourDensity;
-				return volumeFracRate;
-			}
+			// if(isnan(Discrepancy[0])){
+			// 	volumeFracRate[0] = 300;
+			// 	volumeFracRate[1] = neighbourDensity;
+			// 	return volumeFracRate;
+			// }
 
-			Discrepancy[1] += (Mass[particleIndex]/neighbourDensity) * SpikyKernelPow2(dst, smoothingRadius) *
+			Discrepancy[1] += (mass/neighbourDensity) * SpikyKernelPow2(dst, smoothingRadius) *
                             dot(VolumeFraction[particleIndex][1] * DriftVelocity_1[particleIndex] + VolumeFraction[neighbourIndex][1] * DriftVelocity_1[neighbourIndex], dirToNeighbour);
 			
-			if(isnan(Discrepancy[1])){
-				volumeFracRate[0] = 400;
-				volumeFracRate[1] = neighbourDensity;
-				return volumeFracRate;
-			}
+			// if(isnan(Discrepancy[1])){
+			// 	volumeFracRate[0] = 400;
+			// 	volumeFracRate[1] = neighbourDensity;
+			// 	return volumeFracRate;
+			// }
 
-            volumeFracGradient_0 += dirToNeighbour * (Mass[neighbourIndex]/neighbourDensity)
+            volumeFracGradient_0 += dirToNeighbour * (mass/neighbourDensity)
                                 *(neighbourVolumeFrac_0 - VolumeFraction[particleIndex][0]) * SpikyKernelPow2(dst, smoothingRadius);
-            volumeFracGradient_1 += dirToNeighbour * (Mass[neighbourIndex]/neighbourDensity)
+            volumeFracGradient_1 += dirToNeighbour * (mass/neighbourDensity)
                                 *(neighbourVolumeFrac_1 - VolumeFraction[particleIndex][1]) * SpikyKernelPow2(dst, smoothingRadius);
         }
     }
@@ -493,7 +506,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	if (id.x >= numParticles) return;
 
 	float2 pos = PredictedPositions[id.x];
-	Densities[id.x] = CalculateDensity(pos, Mass[id.x]);
+	Densities[id.x] = CalculateDensity(pos);
 }
 
 [numthreads(NumThreads,1,1)]
@@ -550,8 +563,8 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 			float sharedPressure = (pressure + neighbourPressure) * 0.5;
 			float sharedNearPressure = (nearPressure + neighbourNearPressure) * 0.5;
 
-			pressureForce += dirToNeighbour * DensityDerivative(dst, smoothingRadius) * Mass[id.x] * sharedPressure / neighbourDensity;
-			pressureForce += dirToNeighbour * NearDensityDerivative(dst, smoothingRadius) * Mass[id.x] * sharedNearPressure / neighbourNearDensity;
+			pressureForce += dirToNeighbour * DensityDerivative(dst, smoothingRadius) * mass * sharedPressure / neighbourDensity;
+			pressureForce += dirToNeighbour * NearDensityDerivative(dst, smoothingRadius) * mass * sharedNearPressure / neighbourNearDensity;
 		}
 	}
 
@@ -606,11 +619,11 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 			float dst = sqrt(sqrDstToNeighbour);
 			float2 neighbourVelocity = Velocities[neighbourIndex];
 			float neighbourDensity = Densities[neighbourIndex][0];
-			float viscosity_j = dot(VolumeFraction[neighbourIndex], viscosityStrength);
-			viscosityForce += (-1)*(Mass[neighbourIndex]/neighbourDensity)*(viscosity_i + viscosity_j)*(neighbourVelocity - velocity) * SpikyKernelPow2(dst, smoothingRadius);
+			float viscosity_j = dot(VolumeFraction[neighbourIndex], viscosityStrength); 
+			viscosityForce += (mass)*(viscosity_i + viscosity_j)*(neighbourVelocity - velocity) * ViscosityKernel(dst, smoothingRadius); // (-1)*
 		}
 	}
-	Velocities[id.x] += (viscosityForce/density_m) * deltaTime;
+	Velocities[id.x] += (viscosityForce/density_m) * deltaTime; //(viscosityForce/density_m)
 	Acceleration[id.x] -= (viscosityForce/density_m);
 }
 
@@ -619,12 +632,12 @@ void UpdatePositions(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
 	// float2 change;
-	if(abs(Velocities[id.x][0] * deltaTime) > 0.10){
-		Velocities[id.x][0] = sign(Velocities[id.x][0]) * 0.10 / deltaTime;
-	}
-	if(abs(Velocities[id.x][1] * deltaTime) > 0.10){
-		Velocities[id.x][1] = sign(Velocities[id.x][1]) * 0.10 / deltaTime;
-	}
+	// if(abs(Velocities[id.x][0] * deltaTime) > 0.10){
+	// 	Velocities[id.x][0] = sign(Velocities[id.x][0]) * 0.10 / deltaTime;
+	// }
+	// if(abs(Velocities[id.x][1] * deltaTime) > 0.10){
+	// 	Velocities[id.x][1] = sign(Velocities[id.x][1]) * 0.10 / deltaTime;
+	// }
 	// change[0] = max(min(Velocities[id.x][0] * deltaTime, 0.005), -0.005);
 	// change[1] = max(min(Velocities[id.x][1] * deltaTime, 0.005), -0.005);
 	
@@ -709,7 +722,7 @@ void CalculateCMT (uint3 id : SV_DispatchThreadID) //CMT: convective momentum tr
 			phaseDensity[1]*(VolumeFraction[neighbourIndex][1] * u_m1j * dot(dirToNeighbour, u_m1j) * SpikyKernelPow2(dst, smoothingRadius)
 							+ VolumeFraction[id.x][1] * u_m1i * dot(dirToNeighbour, u_m1i) * SpikyKernelPow2(dst, smoothingRadius));
 
-			CMTForce += (Mass[neighbourIndex]/neighbourDensity) * (CMT_term1 + CMT_term2);
+			CMTForce += 10000 * (mass/neighbourDensity) * (CMT_term1 + CMT_term2);
 		}
 
 	}

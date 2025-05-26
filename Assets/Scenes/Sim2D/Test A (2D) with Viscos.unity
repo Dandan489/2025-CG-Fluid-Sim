@@ -171,10 +171,10 @@ MonoBehaviour:
   phaseDensity: {x: 600, y: 720}
   phaseMass: {x: 4, y: 5}
   tau: 0.000001
-  sigma: 10
-  viscosityStrength: {x: 1, y: 1}
+  sigma: 0
+  viscosityStrength: {x: 0, y: 2}
   mass: 4
-  miscible: 1
+  miscible: 0
   timeScale: 1
   maxTimestepFPS: 60
   iterationsPerFrame: 3
@@ -203,20 +203,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 895837b52d5fc53409ded3589d4da696, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnDensity: 159
+  spawnDensity: 350
   initialVelocity: {x: 0, y: -1}
   jitterStr: 0.03
   spawnRegions:
-  - position: {x: 5, y: -1}
-    size: {x: 7, y: 7}
+  - position: {x: 0, y: 2}
+    size: {x: 4, y: 4}
     mass: 4
     debugCol: {r: 0.27843142, g: 0.4205825, b: 1, a: 1}
-  - position: {x: -5, y: -1}
-    size: {x: 7, y: 7}
+  - position: {x: 0, y: -2.5}
+    size: {x: 4, y: 4}
     mass: 5
     debugCol: {r: 1, g: 0.31536943, b: 0.27843142, a: 1}
   showSpawnBoundsGizmos: 1
-  spawnParticleCount: 15842
+  spawnParticleCount: 11250
 --- !u!114 &271053323
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -16,6 +16,8 @@ namespace Seb.Fluid2D.Simulation
 		public float tau;
 		public float sigma;
 		public Vector2 viscosityStrength;
+		public float mass;
+		public bool miscible;
 
 		[Header("Simulation Settings")]
 		public float timeScale = 1;
@@ -162,7 +164,7 @@ namespace Seb.Fluid2D.Simulation
 			compute.SetInt("numParticles", numParticles);
 		}
 
-		void DebugPrintParticleData()
+		void DebugPrintParticleData(string debugMem)
 		{
 			float2[] positions = new float2[positionBuffer.count];
 			float[] masses = new float[massBuffer.count];
@@ -170,6 +172,7 @@ namespace Seb.Fluid2D.Simulation
 			float2[] frac = new float2[volumeFractionBuffer.count];
 			float2[] velo_0 = new float2[volumeFractionBuffer.count];
 			float2[] dense = new float2[massBuffer.count];
+			float2[] velocity = new float2[velocityBuffer.count];
 
 
 			positionBuffer.GetData(positions);
@@ -178,7 +181,7 @@ namespace Seb.Fluid2D.Simulation
 			volumeFractionBuffer.GetData(frac);
 			driftVelocityBuffer_0.GetData(velo_0);
 			densityBuffer.GetData(dense);
-			
+			velocityBuffer.GetData(velocity);
 
 			// for (int i = 0; i < positions.Length; i++)
 			// {
@@ -186,7 +189,7 @@ namespace Seb.Fluid2D.Simulation
 			// }
 			for (int i = 0; i < positions.Length; i++)
 			{
-				Debug.Log($"Particle {i}: FracRate = {fracRate[i]}, Frac = {frac[i]}, Drift0: {velo_0[i]}, Den: {dense[i][0]}, {dense[i][1]}");
+				Debug.Log($"({debugMem}) Particle {i}: Velocity {velocity[i]}");
 			}
 		}
 
@@ -232,12 +235,17 @@ namespace Seb.Fluid2D.Simulation
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: volumeFractionCalculateKernel);
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: volumeFractionUpdateKernel);
 
-			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: densityKernel);
+			// ComputeHelper.Dispatch(compute, numParticles, kernelIndex: densityKernel);
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: pressureKernel);
+			// DebugPrintParticleData("after pressure");
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: viscosityKernel);
-			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: calculateCMTKernel);
+			// DebugPrintParticleData("after viscosity");
+			// ComputeHelper.Dispatch(compute, numParticles, kernelIndex: calculateCMTKernel);
+			// DebugPrintParticleData("after CMT");
+
 
 			ComputeHelper.Dispatch(compute, numParticles, kernelIndex: updatePositionKernel);
+			// DebugPrintParticleData("after update");
 		}
 
 		void RunSpatial()
@@ -273,6 +281,8 @@ namespace Seb.Fluid2D.Simulation
 			compute.SetVector("phaseMass", phaseMass);
 			compute.SetFloat("sigma", sigma);
 			compute.SetFloat("tau", tau);
+			compute.SetFloat("mass", mass);
+			compute.SetBool("miscible", miscible);
 
 			// Mouse interaction settings:
 			Vector2 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
@@ -341,7 +351,7 @@ namespace Seb.Fluid2D.Simulation
 
 			if (Input.GetKeyDown(KeyCode.P))
 			{
-				DebugPrintParticleData();
+				DebugPrintParticleData("Press P");
 			}
 		}
 

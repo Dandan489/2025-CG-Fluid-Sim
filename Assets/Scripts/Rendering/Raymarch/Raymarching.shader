@@ -644,7 +644,9 @@ Shader "Fluid/Raymarching"
 
             float4 frag(v2f i) : SV_Target
             {
-                return float4(RayMarchFluid(i.uv, viewMarchStepSize), 1);
+                float3 fluidColor = float3(1.0, 1.0, 1.0);
+                // float3 fluidColor = float3(0.2, 0.6, 1.0);
+                return float4(RayMarchFluid(i.uv, viewMarchStepSize) * fluidColor, 1);
             }
             
             ENDCG

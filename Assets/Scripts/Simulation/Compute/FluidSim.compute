@@ -82,9 +82,9 @@ const int sprayClassifyMaxNeighbours;
 const float bubbleScale;
 const float bubbleScaleChangeSpeed;
 
-float PressureFromDensity(float density)
+float PressureFromDensity(float density, float2 volumeFraction) //change this by adding volume fraction
 {
-    return (density - targetDensity) * pressureMultiplier;
+	return (density - dot(volumeFraction, phaseDensity)) * pressureMultiplier;
 }
 
 float NearPressureFromDensity(float nearDensity)
@@ -130,6 +130,8 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
     vel = mul(localToWorld, float4(velocityLocal, 0)).xyz;
 }
 
+//TODO :
+// 1. Mouse force 
 [numthreads(ThreadGroupSize, 1, 1)]
 void ExternalForces(uint3 id : SV_DispatchThreadID)
 {
@@ -183,7 +185,8 @@ void ReorderCopyBack(uint3 id : SV_DispatchThreadID)
     PredictedPositions[id.x] = SortTarget_PredictedPositions[id.x];
     Velocities[id.x] = SortTarget_Velocities[id.x];
 }
-
+// TODO:
+// 1. add mass (done)
 float2 CalculateDensitiesAtPoint(float3 pos)
 {
     int3 originCell = GetCell3D(pos, smoothingRadius);
@@ -218,8 +221,8 @@ float2 CalculateDensitiesAtPoint(float3 pos)
 
             // Calculate density and near density
             float dst = sqrt(sqrDstToNeighbour);
-            density += DensityKernel(dst, smoothingRadius);
-            nearDensity += NearDensityKernel(dst, smoothingRadius);
+            density += DensityKernel(dst, smoothingRadius) * mass;
+            nearDensity += NearDensityKernel(dst, smoothingRadius) * mass;
         }
     }
 
@@ -263,7 +266,10 @@ float3 CalculateOrthonormal(float3 dir)
     return normalize(orthoVec);
 }
 
-
+//TODO:
+// 1. density ->density_m  (done)
+// 2. mass (done)
+// 3. foam
 [numthreads(ThreadGroupSize, 1, 1)]
 void CalculatePressureForce(uint3 id : SV_DispatchThreadID)
 {
@@ -271,9 +277,10 @@ void CalculatePressureForce(uint3 id : SV_DispatchThreadID)
         return;
 
     // Calculate pressure
+    float density_m =  dot(VolumeFraction[id.x], phaseDensity);
     float density = Densities[id.x][0];
     float densityNear = Densities[id.x][1];
-    float pressure = PressureFromDensity(density);
+    float pressure = PressureFromDensity(density, VolumeFraction[id.x]) + PressureDelta[id.x];
     float nearPressure = NearPressureFromDensity(densityNear);
     float3 pressureForce = 0;
     float3 velocity = Velocities[id.x];
@@ -316,7 +323,7 @@ void CalculatePressureForce(uint3 id : SV_DispatchThreadID)
             // Calculate pressure force
             float densityNeighbour = Densities[neighbourIndex][0];
             float nearDensityNeighbour = Densities[neighbourIndex][1];
-            float neighbourPressure = PressureFromDensity(densityNeighbour);
+            float neighbourPressure = PressureFromDensity(densityNeighbour, VolumeFraction[neighbourIndex]);
             float neighbourPressureNear = NearPressureFromDensity(nearDensityNeighbour);
 
             float sharedPressure = (pressure + neighbourPressure) / 2;
@@ -327,8 +334,8 @@ void CalculatePressureForce(uint3 id : SV_DispatchThreadID)
             neighbourCount++;
 
             // Update pressure force
-            pressureForce += dirToNeighbour * DensityDerivative(dstToNeighbour, smoothingRadius) * sharedPressure / densityNeighbour;
-            pressureForce += dirToNeighbour * NearDensityDerivative(dstToNeighbour, smoothingRadius) * sharedNearPressure / nearDensityNeighbour;
+            pressureForce += dirToNeighbour * DensityDerivative(dstToNeighbour, smoothingRadius) * mass* sharedPressure / densityNeighbour;
+            pressureForce += dirToNeighbour * NearDensityDerivative(dstToNeighbour, smoothingRadius) * mass * sharedNearPressure / nearDensityNeighbour;
 
             // ---- White Particle 'Trapped Air' Calculation ----
             float3 relativeVelocity = velocity - Velocities[neighbourIndex];
@@ -343,10 +350,10 @@ void CalculatePressureForce(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    float3 acceleration = pressureForce / density;
+    float3 acceleration = pressureForce / density_m;
     float3 velocityNew = velocity + acceleration * deltaTime;
     Velocities[id.x] = velocityNew;
-
+    Acceleration[id.x] -= acceleration;
     // Quick test -- apply some drag to airborne fluid particles
     if (neighbourCount < 8)
     {
@@ -405,7 +412,7 @@ void CalculatePressureForce(uint3 id : SV_DispatchThreadID)
         }
     }
 }
-
+// TODO : Change the viscosity force
 [numthreads(ThreadGroupSize, 1, 1)]
 void CalculateViscosity(uint3 id : SV_DispatchThreadID)
 {
@@ -419,6 +426,8 @@ void CalculateViscosity(uint3 id : SV_DispatchThreadID)
     float3 viscosityForce = 0;
     float3 velocity = Velocities[id.x];
 
+    float density_m = dot(VolumeFraction[id.x], phaseDensity);
+	float2 viscosity_i = dot(VolumeFraction[id.x], viscosityStrength);
     // Neighbour search
     for (int i = 0; i < 27; i++)
     {
@@ -452,10 +461,13 @@ void CalculateViscosity(uint3 id : SV_DispatchThreadID)
             // Calculate viscosity
             float dst = sqrt(sqrDstToNeighbour);
             float3 neighbourVelocity = Velocities[neighbourIndex];
-            viscosityForce += (neighbourVelocity - velocity) * SmoothingKernelPoly6(dst, smoothingRadius);
+            float neighbourDensity = Densities[neighbourIndex][0];
+			float viscosity_j = dot(VolumeFraction[neighbourIndex], viscosityStrength);
+			viscosityForce += (-1)*(mass/neighbourDensity)*(viscosity_i + viscosity_j)*(neighbourVelocity - velocity) * SpikyKernelPow2(dst, smoothingRadius);
         }
     }
-    Velocities[id.x] += viscosityForce * viscosityStrength * deltaTime;
+    Velocities[id.x] += (viscosityForce/density_m) * deltaTime;
+    Acceleration[id.x] -= (viscosityForce/density_m);
 }
 
 [numthreads(ThreadGroupSize, 1, 1)]
@@ -605,3 +617,11 @@ void WhiteParticlePrepareNextFrame(uint3 id : SV_DispatchThreadID)
         WhiteParticleCounters[0] = WhiteParticleCounters[1];
     }
 }
+
+//TODO : 
+// 1. Drift velocity
+// 2. CMT force
+// 3. Calculate volume fraction 
+// 4. Update volume fraction
+// 5.  
+
